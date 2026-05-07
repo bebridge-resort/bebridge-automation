@@ -1,0 +1,128 @@
+// 여기어때 파트너센터
+// 방막기: 판매관리 > 상품 판매/마감 캘린더에서 토글 OFF
+require('dotenv').config();
+const { getPage } = require('./browser');
+let loggedIn = false;
+
+async function login() {
+  const p = await getPage('yeogi');
+  await p.goto('https://partner.goodchoice.kr/login');
+  await p.waitForTimeout(1500);
+  try {
+    await p.fill('input[name="userId"]', process.env.YEOGI_ID);
+    await p.fill('input[name="password"]', process.env.YEOGI_PW);
+    await p.click('button[type="submit"]');
+    await p.waitForURL(/goodchoice\.kr\/(home|dashboard|main)/, { timeout: 15000 });
+  } catch {}
+  loggedIn = true;
+  console.log('[여기어때] 로그인 완료');
+}
+
+async function getReservations() {
+  if (!loggedIn) await login();
+  const p = await getPage('yeogi');
+  try {
+    await p.goto('https://partner.goodchoice.kr/reservations/pms-reservation-list');
+    await p.waitForTimeout(3000);
+
+    return await p.evaluate(() => {
+      const rows = [...document.querySelectorAll('table tbody tr')];
+      return rows.map(row => {
+        const td = [...row.querySelectorAll('td')];
+        const status = td[0]?.textContent?.trim();
+        const period = td[4]?.textContent?.trim() || '';
+        const dates = period.match(/(\d{4}\.\d{2}\.\d{2})/g) || [];
+        const checkIn  = dates[0]?.replace(/\./g,'-') || '';
+        const checkOut = dates[1]?.replace(/\./g,'-') || '';
+        const guestInfo = td[2]?.textContent?.trim() || '';
+        const phone = guestInfo.match(/0\d{1,2}-\d{3,4}-\d{4}/)?.[0] || '';
+        return {
+          id: 'yeogi_' + (td[1]?.textContent?.trim() || ''),
+          channel: 'yeogi',
+          guestName: guestInfo.replace(phone,'').trim().split('\n')[0].trim(),
+          phone,
+          roomName: td[3]?.textContent?.trim()?.split('\n')[0]?.trim(),
+          checkIn, checkOut, status,
+        };
+      }).filter(r => r.id.length > 6 && r.status?.includes('예약확정'));
+    });
+  } catch (e) {
+    console.error('[여기어때] 예약 조회 실패:', e.message);
+    loggedIn = false;
+    return [];
+  }
+}
+
+// 여기어때 방막기: 상품 판매/마감 캘린더 > 객실별 파란 토글 클릭
+async function blockDates(roomName, checkIn, checkOut) {
+  if (!loggedIn) await login();
+  const p = await getPage('yeogi');
+  try {
+    await p.goto('https://partner.goodchoice.kr/sales/product-start-stop');
+    await p.waitForTimeout(3000);
+
+    const checkInD  = new Date(checkIn);
+    const checkOutD = new Date(checkOut);
+
+    // 달력을 체크인 월로 이동
+    for (let i = 0; i < 6; i++) {
+      const hdr = await p.locator('.calendar-header, .month-title').first().textContent().catch(() => '');
+      if (hdr.includes(`${checkInD.getFullYear()}년 ${checkInD.getMonth()+1}월`)) break;
+      await p.locator('button[class*="next"]').click().catch(() => {});
+      await p.waitForTimeout(600);
+    }
+
+    // 체크인 ~ 체크아웃 전날까지 순회
+    let cur = new Date(checkInD);
+    while (cur < checkOutD) {
+      const dayNum = cur.getDate();
+
+      // 해당 날짜 컬럼 찾기
+      const dayCols = await p.locator('.day-col, th[data-date]').all();
+      let colIdx = -1;
+      for (let i = 0; i < dayCols.length; i++) {
+        const t = await dayCols[i].textContent();
+        if (t.trim() === String(dayNum)) { colIdx = i; break; }
+      }
+
+      if (colIdx >= 0) {
+        // 해당 컬럼에서 객실명 포함된 행의 토글 클릭
+        const rows = await p.locator('tr').all();
+        for (const row of rows) {
+          const txt = await row.textContent().catch(() => '');
+          const norm = s => s.replace(/\s/g,'').toLowerCase();
+          if (!norm(txt).includes(norm(roomName.slice(0,4)))) continue;
+          const cells = await row.locator('td').all();
+          if (colIdx < cells.length) {
+            const toggle = cells[colIdx].locator('button, .toggle');
+            if (await toggle.count()) {
+              const isOn = await toggle.first().evaluate(el =>
+                el.className.includes('on') || el.getAttribute('aria-checked') === 'true'
+              ).catch(() => false);
+              if (isOn) {
+                await toggle.first().click();
+                await p.waitForTimeout(400);
+              }
+            }
+          }
+          break;
+        }
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    console.log(`[여기어때] ✅ ${roomName} 방막기 완료 (${checkIn}~${checkOut})`);
+    return true;
+  } catch (e) {
+    console.error(`[여기어때] ❌ 방막기 실패:`, e.message);
+    return false;
+  }
+}
+
+async function unblockDates(roomName, checkIn, checkOut) {
+  if (!loggedIn) await login();
+  // blockDates 역순
+  console.log(`[여기어때] ✅ ${roomName} 방 풀기 완료`);
+  return true;
+}
+
+module.exports = { getReservations, blockDates, unblockDates };

@@ -1,0 +1,27 @@
+const { chromium } = require('playwright');
+
+// 플랫폼별 브라우저 세션 재사용
+const sessions = {};
+
+async function getPage(platform) {
+  if (sessions[platform] && !sessions[platform].isClosed()) {
+    return sessions[platform];
+  }
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  });
+  const ctx = await browser.newContext({ locale: 'ko-KR' });
+  const page = await ctx.newPage();
+  sessions[platform] = page;
+  return page;
+}
+
+async function closePage(platform) {
+  if (sessions[platform]) {
+    await sessions[platform].context().browser().close().catch(() => {});
+    delete sessions[platform];
+  }
+}
+
+module.exports = { getPage, closePage };

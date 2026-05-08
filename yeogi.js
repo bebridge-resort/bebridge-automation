@@ -1,128 +1,104 @@
-// 떠나요 파트너센터
-// 방막기: 예약달력관리 > 날짜 클릭 > 팝업 > 완료
 require('dotenv').config();
-const { getPage } = require('./browser');
-const ACC = process.env.DDNAYO_ACC_ID || '9382';
-let loggedIn = false;
+const { getPage, resetPage } = require('./browser');
+let ok = false;
 
 async function login() {
-  const p = await getPage('ddnayo');
-  await p.goto('https://partner.ddnayo.com/login');
-  await p.waitForTimeout(1500);
+  const p = await getPage('yeogi');
   try {
-    await p.fill('input[placeholder*="아이디"], input[name="userId"]', process.env.DDNAYO_ID);
-    await p.fill('input[placeholder*="비밀번호"], input[type="password"]', process.env.DDNAYO_PW);
+    await p.goto('https://partner.goodchoice.kr/login');
+    await p.waitForTimeout(1500);
+    await p.fill('input[name="userId"]', process.env.YEOGI_ID);
+    await p.fill('input[name="password"]', process.env.YEOGI_PW);
     await p.click('button[type="submit"]');
-    await p.waitForTimeout(3000);
+    await p.waitForURL(/goodchoice\.kr/, { timeout: 15000 });
   } catch {}
-  loggedIn = true;
-  console.log('[떠나요] 로그인 완료');
+  ok = true;
+  console.log('[여기어때] 로그인 완료');
 }
 
 async function getReservations() {
-  if (!loggedIn) await login();
-  const p = await getPage('ddnayo');
+  if (!ok) await login();
+  const p = await getPage('yeogi');
   try {
-    await p.goto(`https://partner.ddnayo.com/reservationManagement/bookingRequestList?accommodationId=${ACC}`);
+    await p.goto('https://partner.goodchoice.kr/reservations/pms-reservation-list');
     await p.waitForTimeout(3000);
-
     return await p.evaluate(() => {
-      const rows = [...document.querySelectorAll('table tbody tr')];
-      return rows.map(row => {
+      return [...document.querySelectorAll('table tbody tr')].map(row => {
         const td = [...row.querySelectorAll('td')];
-        const idEl = td[0]?.querySelector('a');
-        const dateStr = td[4]?.textContent?.trim() || '';
+        const period = td[4]?.textContent?.trim() || '';
+        const dates = period.match(/\d{4}\.\d{2}\.\d{2}/g) || [];
+        const gInfo = td[2]?.textContent?.trim() || '';
+        const phone = gInfo.match(/0\d{1,2}-\d{3,4}-\d{4}/)?.[0] || '';
         return {
-          id: 'ddnayo_' + (idEl?.textContent?.trim() || td[0]?.textContent?.trim() || ''),
-          channel: 'ddnayo',
-          guestName: td[2]?.textContent?.trim()?.split('\n')[0]?.trim(),
-          phone: td[2]?.textContent?.match(/\d{2,3}-\d{3,4}-\d{4}/)?.[0] || '',
-          roomName: td[1]?.textContent?.trim()?.split('\n')[0]?.trim(),
-          checkIn: dateStr.split('~')[0]?.trim()?.replace(/\./g,'-'),
-          checkOut: dateStr.split('~')[1]?.trim()?.replace(/\./g,'-'),
-          status: td[7]?.textContent?.trim(),
+          id: 'yeogi_' + (td[1]?.textContent?.trim() || ''),
+          channel: 'yeogi',
+          guestName: gInfo.replace(phone,'').trim().split('\n')[0].trim(),
+          phone,
+          roomName: td[3]?.textContent?.trim()?.split('\n')[0]?.trim(),
+          checkIn:  dates[0]?.replace(/\./g,'-') || '',
+          checkOut: dates[1]?.replace(/\./g,'-') || '',
+          status: td[0]?.textContent?.trim(),
         };
-      }).filter(r => r.id.length > 7);
+      }).filter(r => r.id.length > 7 && r.status?.includes('예약확정'));
     });
   } catch (e) {
-    console.error('[떠나요] 예약 조회 실패:', e.message);
-    loggedIn = false;
+    console.error('[여기어때] 예약 조회 실패:', e.message);
+    ok = false; await resetPage('yeogi');
     return [];
   }
 }
 
-// 떠나요 방막기: 예약달력관리 > 날짜 > 객실 클릭 > 팝업에서 완료
 async function blockDates(roomName, checkIn, checkOut) {
-  if (!loggedIn) await login();
-  const p = await getPage('ddnayo');
+  if (!ok) await login();
+  const p = await getPage('yeogi');
   try {
-    await p.goto(`https://partner.ddnayo.com/reservationManagement/roomAvailability?accommodationId=${ACC}`);
+    await p.goto('https://partner.goodchoice.kr/sales/product-start-stop');
     await p.waitForTimeout(3000);
 
-    const checkInD  = new Date(checkIn);
-    const checkOutD = new Date(checkOut);
+    const ciD = new Date(checkIn);
+    const coD = new Date(checkOut);
 
-    // 해당 주로 달력 이동
-    for (let i = 0; i < 12; i++) {
-      const hdr = await p.locator('.cal-header, .month-label').first().textContent().catch(() => '');
-      if (hdr.includes(`${checkInD.getMonth()+1}월`)) break;
-      await p.locator('button[class*="next"]').click().catch(() => {});
+    // 해당 월로 달력 이동
+    for (let i = 0; i < 6; i++) {
+      const hdr = await p.locator('[class*="month"], [class*="header"]').first().textContent().catch(() => '');
+      if (hdr.includes(`${ciD.getFullYear()}`) && hdr.includes(`${ciD.getMonth()+1}월`)) break;
+      await p.locator('button[class*="next"]').first().click().catch(() => {});
       await p.waitForTimeout(600);
     }
 
-    // 체크인 ~ 체크아웃 전날 순회
-    let cur = new Date(checkInD);
-    while (cur < checkOutD) {
-      const dateKey = `${cur.getMonth()+1}/${cur.getDate()}`;
-
-      // 날짜 헤더 찾기
-      const headers = await p.locator('.date-head, th').all();
-      let colIdx = -1;
-      for (let i = 0; i < headers.length; i++) {
-        const t = (await headers[i].textContent()).replace(/\s/g,'');
-        if (t.includes(String(cur.getDate()))) { colIdx = i; break; }
-      }
-
-      if (colIdx >= 0) {
-        // 해당 날짜의 객실 셀 찾기
-        const allRows = await p.locator('tr').all();
-        for (const row of allRows) {
-          const txt = await row.textContent().catch(() => '');
-          if (!txt.replace(/\s/g,'').includes(roomName.replace(/\s/g,'').slice(0,4))) continue;
-          const cells = await row.locator('td').all();
-          if (colIdx < cells.length) {
-            const cell = cells[colIdx];
-            const roomItem = cell.locator('.room-name, li, span').first();
-            const target = await roomItem.count() ? roomItem : cell;
-            await target.click();
-            await p.waitForTimeout(1000);
-
-            // 팝업 처리
-            const popup = p.locator('.modal, .popup, [role="dialog"]').first();
-            if (await popup.count()) {
-              const completeBtn = popup.locator('button:has-text("완료"), button:has-text("마감"), .btn-complete');
-              if (await completeBtn.count()) {
-                await completeBtn.first().click();
-                await p.waitForTimeout(500);
-              }
-            }
+    let cur = new Date(ciD);
+    while (cur < coD) {
+      // 해당 날짜·객실 토글 OFF
+      const allRows = await p.locator('tr').all();
+      for (const row of allRows) {
+        const txt = await row.textContent().catch(() => '');
+        if (!txt.replace(/\s/g,'').includes(roomName.replace(/\s/g,'').slice(0,4))) continue;
+        const cells = await row.locator('td').all();
+        for (const cell of cells) {
+          const cellTxt = await cell.textContent().catch(() => '');
+          if (!cellTxt.includes(String(cur.getDate()))) continue;
+          const toggle = cell.locator('button, [role="switch"]').first();
+          if (await toggle.count()) {
+            const isOn = await toggle.evaluate(el => el.getAttribute('aria-checked')==='true' || el.className.includes('on')).catch(() => false);
+            if (isOn) { await toggle.click(); await p.waitForTimeout(300); }
           }
           break;
         }
+        break;
       }
       cur.setDate(cur.getDate() + 1);
     }
-    console.log(`[떠나요] ✅ ${roomName} 방막기 완료 (${checkIn}~${checkOut})`);
+    console.log(`[여기어때] ✅ ${roomName} 방막기 완료 (${checkIn}~${checkOut})`);
     return true;
   } catch (e) {
-    console.error(`[떠나요] ❌ 방막기 실패:`, e.message);
+    console.error(`[여기어때] ❌ 방막기 실패:`, e.message);
     return false;
   }
 }
 
 async function unblockDates(roomName, checkIn, checkOut) {
-  if (!loggedIn) await login();
-  console.log(`[떠나요] ✅ ${roomName} 방 풀기 완료`);
+  if (!ok) await login();
+  console.log(`[여기어때] ✅ ${roomName} 방 풀기 완료`);
   return true;
 }
 

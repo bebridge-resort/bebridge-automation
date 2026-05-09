@@ -5,13 +5,16 @@ let ok = false;
 async function login() {
   const p = await getPage('wings');
   try {
-    await p.goto('https://wingscms.com/');
+    await p.goto('https://wingscms.com/#/login/zz/zz01_0100');
     await p.waitForTimeout(2000);
-    await p.fill('input[type="text"]', process.env.WINGS_ID);
-    await p.fill('input[type="password"]', process.env.WINGS_PW);
-    await p.click('button[type="submit"], .login-button, [class*="login"] button');
+    await p.fill('input[placeholder="컴퍼니 ID"]', process.env.WINGS_COMPANY_ID);
+    await p.fill('input[placeholder="사용자 ID / 이메일"]', process.env.WINGS_ID);
+    await p.fill('input[placeholder="비밀번호"], input[type="password"]', process.env.WINGS_PW);
+    await p.click('button:has-text("로그인")');
     await p.waitForTimeout(4000);
-  } catch {}
+  } catch (e) {
+    console.error('[윙스] 로그인 오류:', e.message);
+  }
   ok = true;
   console.log('[윙스] 로그인 완료');
 }

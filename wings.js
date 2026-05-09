@@ -7,8 +7,11 @@ async function login() {
   try {
     await p.goto('https://wingscms.com/#/login/zz/zz01_0100');
     await p.waitForTimeout(2000);
+    // 1. 컴퍼니 ID
     await p.fill('input[placeholder="컴퍼니 ID"]', process.env.WINGS_COMPANY_ID);
+    // 2. 사용자 ID / 이메일
     await p.fill('input[placeholder="사용자 ID / 이메일"]', process.env.WINGS_ID);
+    // 3. 비밀번호
     await p.fill('input[placeholder="비밀번호"], input[type="password"]', process.env.WINGS_PW);
     await p.click('button:has-text("로그인")');
     await p.waitForTimeout(4000);
@@ -17,6 +20,40 @@ async function login() {
   }
   ok = true;
   console.log('[윙스] 로그인 완료');
+}
+
+// 윙스 신규 예약 목록 조회
+async function getReservations() {
+  if (!ok) await login();
+  const p = await getPage('wings');
+  try {
+    await p.goto('https://wingscms.com/#/app/zz/zz03_0100');
+    await p.waitForTimeout(4000);
+    return await p.evaluate(() => {
+      const toISO = s => {
+        if (!s) return '';
+        const m = s.trim().match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+        return m ? `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` : '';
+      };
+      return [...document.querySelectorAll('table tbody tr')].map(row => {
+        const td = [...row.querySelectorAll('td')];
+        return {
+          id: 'wings_' + (td[0]?.textContent?.trim() || ''),
+          channel: 'wings',
+          guestName: td[2]?.textContent?.trim()?.split('\n')[0]?.trim(),
+          phone: td[3]?.textContent?.trim(),
+          roomName: td[5]?.textContent?.trim()?.split('\n')[0]?.trim(),
+          checkIn:  toISO(td[6]?.textContent?.trim()),
+          checkOut: toISO(td[7]?.textContent?.trim()),
+          status: td[1]?.textContent?.trim(),
+        };
+      }).filter(r => r.id.length > 7 && r.roomName && r.checkIn);
+    });
+  } catch (e) {
+    console.error('[윙스] 예약 조회 실패:', e.message);
+    ok = false; await resetPage('wings');
+    return [];
+  }
 }
 
 // 윙스: 인벤토리 관리 > 오픈→판매마감→저장→확인
@@ -94,4 +131,4 @@ async function unblockDates(roomName, checkIn, checkOut) {
   return true;
 }
 
-module.exports = { blockDates, unblockDates };
+module.exports = { getReservations, blockDates, unblockDates };

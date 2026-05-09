@@ -5,8 +5,8 @@ let ok = false;
 async function login() {
   const p = await getPage('wings');
   try {
-    await p.goto('https://wingscms.com/#/login/zz/zz01_0100');
-    await p.waitForTimeout(2000);
+await p.goto('https://wingscms.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await p.waitForTimeout(5000);
     // 1. 컴퍼니 ID
     await p.fill('input[placeholder="컴퍼니 ID"]', process.env.WINGS_COMPANY_ID);
     // 2. 사용자 ID / 이메일

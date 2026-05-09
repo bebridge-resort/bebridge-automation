@@ -118,4 +118,49 @@ async function confirmBooking(guestName, checkIn) {
   }
 }
 
-module.exports = { createBooking, confirmBooking };
+// 홈페이지 미확인 예약 목록 (예약완료 버튼이 있는 건 = 아직 처리 안 된 건)
+async function getPendingBookings() {
+  if (!adminOk) await loginAdmin();
+  const p = await getPage('homeAdmin');
+  try {
+    await p.goto(`${ADMIN}/payment/list.php`);
+    await p.waitForTimeout(2000);
+    return await p.evaluate(() => {
+      const toISO = s => {
+        if (!s) return '';
+        const m = s.trim().match(/(\d{4})[.\-](\d{1,2})[.\-](\d{1,2})/);
+        return m ? `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` : '';
+      };
+      return [...document.querySelectorAll('table tbody tr')].map(row => {
+        const td  = [...row.querySelectorAll('td')];
+        const btn = row.querySelector('a[href*="view"], .btn_confirm, a[onclick*="confirm"]');
+        // 예약번호, 이름, 객실, 예약일, 연락처, 상태 파싱
+        const reservationNo = td[1]?.textContent?.trim() || '';
+        const guestName     = td[2]?.textContent?.trim() || '';
+        const roomName      = td[3]?.textContent?.trim()?.split('\n')[0]?.trim() || '';
+        const checkInRaw    = td[4]?.textContent?.trim() || '';
+        const phone         = td[9]?.textContent?.trim() || '';
+        const statusText    = td[10]?.textContent?.trim() || '';
+        // 예약완료 버튼이 있고 아직 확정 안 된 건만
+        if (!btn || !reservationNo || !roomName) return null;
+        return {
+          id: 'home_' + reservationNo,
+          channel: 'homepage',
+          guestName,
+          phone,
+          roomName,
+          checkIn:  toISO(checkInRaw.split('~')[0]),
+          checkOut: toISO(checkInRaw.split('~')[1] || ''),
+          status: statusText,
+          confirmHref: btn.getAttribute('href') || '',
+        };
+      }).filter(Boolean);
+    });
+  } catch (e) {
+    console.error('[홈페이지] 예약 조회 실패:', e.message);
+    adminOk = false;
+    return [];
+  }
+}
+
+module.exports = { createBooking, confirmBooking, getPendingBookings };

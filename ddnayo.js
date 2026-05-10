@@ -3,36 +3,44 @@ const { withBrowser } = require('./browser');
 const ACC = process.env.DDNAYO_ACC_ID || '9382';
 
 async function ddnayoLogin(p) {
+  // 떠나요 → 쿠팡 OAuth 로그인 (xauth-v2.coupang.com)
   await p.goto('https://partner.ddnayo.com/login', { timeout: 30000 });
+  await p.waitForTimeout(3000);
 
-  // SPA 페이지 - input이 렌더링될 때까지 대기 (최대 20초)
-  try {
-    await p.waitForSelector('input', { state: 'visible', timeout: 20000 });
-  } catch {
-    // input 없으면 현재 URL/제목 로깅
-    console.log('[떠나요] 현재 URL:', p.url());
-    console.log('[떠나요] 페이지 제목:', await p.title());
-  }
+  // 쿠팡 OAuth 페이지로 리다이렉트 됨
+  // input 나타날 때까지 대기
+  await p.waitForSelector('input', { state: 'visible', timeout: 15000 }).catch(() => {});
+
+  const url = p.url();
+  console.log('[떠나요] 로그인 URL:', url.includes('coupang') ? '쿠팡OAuth' : url);
 
   const inputs = await p.locator('input:visible').all();
   console.log('[떠나요] 입력란 개수:', inputs.length);
 
   if (inputs.length >= 2) {
+    // 첫번째: 아이디/이메일, 두번째: 비밀번호
     await inputs[0].fill(process.env.DDNAYO_ID);
     await inputs[1].fill(process.env.DDNAYO_PW);
   } else if (inputs.length === 1) {
     await inputs[0].fill(process.env.DDNAYO_ID);
-    await p.fill('input[type="password"]', process.env.DDNAYO_PW);
-  } else {
-    // 마지막 시도: email/password 타입
-    await p.fill('input[type="email"], input[type="text"]', process.env.DDNAYO_ID).catch(() => {});
+    await p.waitForTimeout(500);
+    // 다음 버튼 클릭 (이메일 입력 후 비밀번호 페이지로)
+    await p.keyboard.press('Enter');
+    await p.waitForTimeout(2000);
     await p.fill('input[type="password"]', process.env.DDNAYO_PW).catch(() => {});
   }
 
   await p.waitForTimeout(500);
-  try { await p.click('button[type="submit"], .login-btn, [class*="login"] button', { timeout: 5000 }); }
-  catch { await p.keyboard.press('Enter'); }
-  await p.waitForTimeout(4000);
+  // 로그인 버튼 클릭
+  try {
+    await p.click('button[type="submit"], input[type="submit"], .login-button', { timeout: 5000 });
+  } catch {
+    await p.keyboard.press('Enter');
+  }
+
+  // 떠나요 파트너 페이지로 돌아올 때까지 대기
+  await p.waitForURL(/partner\.ddnayo\.com/, { timeout: 15000 }).catch(() => {});
+  await p.waitForTimeout(2000);
   console.log('[떠나요] 로그인 완료');
 }
 

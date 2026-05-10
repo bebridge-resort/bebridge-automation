@@ -2,14 +2,24 @@ require('dotenv').config();
 const { withBrowser } = require('./browser');
 const ACC = process.env.DDNAYO_ACC_ID || '9382';
 
+async function ddnayoLogin(p) {
+  await p.goto('https://partner.ddnayo.com/login', { timeout: 30000 });
+  await p.waitForTimeout(3000);
+  // 다양한 셀렉터 시도
+  const idInput = p.locator('input[type="text"], input[placeholder*="아이디"], input[name="userId"], input[name="id"]').first();
+  await idInput.fill(process.env.DDNAYO_ID, { timeout: 10000 });
+  await p.fill('input[type="password"]', process.env.DDNAYO_PW);
+  await p.waitForTimeout(300);
+  try { await p.click('button[type="submit"]', { timeout: 5000 }); }
+  catch { await p.keyboard.press('Enter'); }
+  await p.waitForTimeout(3000);
+  console.log('[떠나요] 로그인 완료');
+}
+
 async function getReservations() {
   return withBrowser(async p => {
     try {
-      await p.goto('https://partner.ddnayo.com/login', { timeout: 30000 });
-      await p.fill('input[placeholder*="아이디"], input[name="userId"]', process.env.DDNAYO_ID);
-      await p.fill('input[type="password"]', process.env.DDNAYO_PW);
-      await p.click('button[type="submit"]');
-      await p.waitForTimeout(3000);
+      await ddnayoLogin(p);
       await p.goto(`https://partner.ddnayo.com/reservationManagement/bookingRequestList?accommodationId=${ACC}`, { timeout: 30000 });
       await p.waitForTimeout(3000);
       const list = await p.evaluate(() => {
@@ -37,11 +47,7 @@ async function getReservations() {
 async function blockDates(roomName, checkIn, checkOut) {
   return withBrowser(async p => {
     try {
-      await p.goto('https://partner.ddnayo.com/login', { timeout: 30000 });
-      await p.fill('input[placeholder*="아이디"], input[name="userId"]', process.env.DDNAYO_ID);
-      await p.fill('input[type="password"]', process.env.DDNAYO_PW);
-      await p.click('button[type="submit"]');
-      await p.waitForTimeout(3000);
+      await ddnayoLogin(p);
       await p.goto(`https://partner.ddnayo.com/reservationManagement/roomAvailability?accommodationId=${ACC}`, { timeout: 30000 });
       await p.waitForTimeout(3000);
       console.log('[떠나요] ✅ 방막기 완료:', roomName);

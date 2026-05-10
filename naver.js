@@ -3,22 +3,27 @@ const { withBrowser } = require('./browser');
 const BIZ = process.env.NAVER_BIZ_ID || '248756';
 const BASE = 'https://partner.booking.naver.com';
 
+async function naverLogin(p) {
+  await p.goto('https://nid.naver.com/nidlogin.login?svctype=262144', { timeout: 30000 });
+  await p.waitForTimeout(2000);
+  await p.fill('#id', process.env.NAVER_ID);
+  await p.waitForTimeout(500);
+  await p.fill('#pw', process.env.NAVER_PW);
+  await p.waitForTimeout(500);
+  // 여러 셀렉터 시도
+  try { await p.click('.btn_login', { timeout: 5000 }); }
+  catch { await p.keyboard.press('Enter'); }
+  await p.waitForTimeout(4000);
+  console.log('[네이버] 로그인 완료');
+}
+
 async function getReservations() {
   return withBrowser(async p => {
     try {
-      // 로그인
-      await p.goto('https://nid.naver.com/nidlogin.login?svctype=262144', { timeout: 30000 });
-      await p.waitForTimeout(1500);
-      await p.fill('#id', process.env.NAVER_ID);
-      await p.fill('#pw', process.env.NAVER_PW);
-      await p.click('.btn_login');
-      await p.waitForURL(/naver\.com/, { timeout: 15000 });
-
-      // 예약 목록 조회
+      await naverLogin(p);
       const today = new Date().toISOString().slice(0,10);
       await p.goto(`${BASE}/bizes/${BIZ}/booking-list-view?bookingStatusCodes=RC03&dateFilter=REGDATE&startDateTime=${today}&endDateTime=${today}`, { timeout: 30000 });
       await p.waitForTimeout(3000);
-
       const list = await p.evaluate(() => {
         return [...document.querySelectorAll('table tbody tr')].map(row => {
           const td = [...row.querySelectorAll('td')];
@@ -39,24 +44,16 @@ async function getReservations() {
       });
       console.log('[네이버] 조회 완료:', list.length + '건');
       return list;
-    } catch (e) {
-      console.error('[네이버] 조회 실패:', e.message);
-      return [];
-    }
+    } catch (e) { console.error('[네이버] 조회 실패:', e.message); return []; }
   });
 }
 
 async function blockDates(roomName, checkIn, checkOut) {
   return withBrowser(async p => {
     try {
-      await p.goto('https://nid.naver.com/nidlogin.login?svctype=262144', { timeout: 30000 });
-      await p.fill('#id', process.env.NAVER_ID);
-      await p.fill('#pw', process.env.NAVER_PW);
-      await p.click('.btn_login');
-      await p.waitForURL(/naver\.com/, { timeout: 15000 });
+      await naverLogin(p);
       await p.goto(`${BASE}/bizes/${BIZ}/simple-management`, { timeout: 30000 });
       await p.waitForTimeout(3000);
-      // 해당 날짜 토글 OFF
       const rows = await p.locator('tr').all();
       for (const row of rows) {
         const txt = await row.textContent().catch(() => '');
@@ -71,9 +68,6 @@ async function blockDates(roomName, checkIn, checkOut) {
   });
 }
 
-async function unblockDates(roomName, checkIn, checkOut) {
-  console.log('[네이버] 방 풀기 완료:', roomName);
-  return true;
-}
+async function unblockDates(roomName) { console.log('[네이버] 방 풀기:', roomName); return true; }
 
 module.exports = { getReservations, blockDates, unblockDates };

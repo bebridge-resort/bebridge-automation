@@ -1,22 +1,18 @@
 const { chromium } = require('playwright');
-const sessions = {};
 
-async function getPage(key) {
+// 브라우저를 매번 새로 열고, 사용 후 바로 닫음 (메모리 절약)
+async function withBrowser(fn) {
+  let browser = null;
   try {
-    if (sessions[key] && !sessions[key].isClosed()) return sessions[key];
-  } catch {}
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'],
-  });
-  const page = await (await browser.newContext({ locale:'ko-KR' })).newPage();
-  sessions[key] = page;
-  return page;
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--single-process'],
+    });
+    const page = await (await browser.newContext({ locale:'ko-KR' })).newPage();
+    return await fn(page);
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
 }
 
-async function resetPage(key) {
-  try { await sessions[key]?.context()?.browser()?.close(); } catch {}
-  delete sessions[key];
-}
-
-module.exports = { getPage, resetPage };
+module.exports = { withBrowser };

@@ -4,15 +4,26 @@ const ACC = process.env.DDNAYO_ACC_ID || '9382';
 
 async function ddnayoLogin(p) {
   await p.goto('https://partner.ddnayo.com/login', { timeout: 30000 });
-  await p.waitForTimeout(3000);
-  // 다양한 셀렉터 시도
-  const idInput = p.locator('input[type="text"], input[placeholder*="아이디"], input[name="userId"], input[name="id"]').first();
-  await idInput.fill(process.env.DDNAYO_ID, { timeout: 10000 });
-  await p.fill('input[type="password"]', process.env.DDNAYO_PW);
-  await p.waitForTimeout(300);
+  await p.waitForTimeout(5000); // 충분히 대기
+
+  // 현재 페이지의 모든 input 태그 확인 후 첫번째부터 시도
+  const inputs = await p.locator('input:visible').all();
+  console.log('[떠나요] 입력란 개수:', inputs.length);
+
+  if (inputs.length >= 2) {
+    await inputs[0].fill(process.env.DDNAYO_ID);
+    await inputs[1].fill(process.env.DDNAYO_PW);
+  } else {
+    // 개별 셀렉터 시도
+    await p.fill('input:first-of-type', process.env.DDNAYO_ID);
+    await p.fill('input[type="password"]', process.env.DDNAYO_PW);
+  }
+
+  await p.waitForTimeout(500);
+  // 로그인 버튼 클릭 시도
   try { await p.click('button[type="submit"]', { timeout: 5000 }); }
   catch { await p.keyboard.press('Enter'); }
-  await p.waitForTimeout(3000);
+  await p.waitForTimeout(4000);
   console.log('[떠나요] 로그인 완료');
 }
 
